@@ -8,6 +8,8 @@
 #include <AudioGeneratorMP3.h>
 #include <AudioOutputI2S.h>
 
+#include "secrets.h"
+
 // define LED light sensor
 #define PIN_LIGHT_SENSOR 32
 #define LIGHT_THRESHOLD 750
@@ -24,21 +26,12 @@ Audio audio;
 AudioGeneratorMP3 *mp3;
 AudioOutputI2S *out;
 
-// Wifi credentials
-//String ssid = "hotspot10";
-//String password = "snensen420";
-String ssid ="";
-String password = "";
-
-const char* apiKey = "";
-
 bool isLightOn() {
     return sensor_value > LIGHT_THRESHOLD;
 }
 
-void getAPIResponse() {
-    // Send request to OpenAI API
-    String inputText = "hallo wie geht es dir";
+String getAPIResponse(String inputText) {
+
     String apiUrl = "https://api.openai.com/v1/chat/completions";
     String payload = "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"user\", \"content\": \"" + inputText + "\"}]}";
 
@@ -46,7 +39,7 @@ void getAPIResponse() {
 
     http.begin(apiUrl);
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", "Bearer " + String(apiKey));
+    http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
 
     int httpResponseCode = http.POST(payload);
     if (httpResponseCode == 200) {
@@ -62,38 +55,6 @@ void getAPIResponse() {
     }
 }
 
-void getAPIResponseWithSpeech() {
-    String inputText = "Hallo, wie geht es dir?";
-    String chatUrl = "https://api.openai.com/v1/chat/completions";
-    String speechUrl = "https://api.openai.com/v1/audio/speech";
-
-    // Schritt 1: ChatGPT-Antwort abrufen
-    String chatPayload = "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"user\", \"content\": \"" + inputText + "\"}]}";
-
-    HTTPClient http;
-    http.begin(chatUrl);
-    http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", "Bearer " + String(apiKey));
-
-    int httpResponseCode = http.POST(chatPayload);
-    if (httpResponseCode == 200) {
-        String response = http.getString();
-        DynamicJsonDocument jsonDoc(2048);
-        deserializeJson(jsonDoc, response);
-        String outputText = jsonDoc["choices"][0]["message"]["content"].as<String>();
-        Serial.println("Antwort von ChatGPT:");
-        Serial.println(outputText);
-
-        // Schritt 2: Text in Sprache umwandeln
-        audio.connecttohost("http://141.147.61.164:42069/tts?text=ich+habe+einen+dicken+und+würde+ihn+gerne+knicken");
-
-    } else {
-        Serial.printf("ChatGPT-Fehler: %i\n", httpResponseCode);
-    }
-
-    http.end();
-}
-
 
 
 void setup() {
@@ -106,6 +67,9 @@ void setup() {
     // setup Wifi in station mode
     WiFi.disconnect();
     WiFi.mode(WIFI_STA);
+
+    String ssid = WIFI_SSID;
+    String password = WIFI_PASSWORD;
     WiFi.begin(ssid.c_str(), password.c_str());
 
     while (WiFi.status() != WL_CONNECTED) {
@@ -134,6 +98,7 @@ void setup() {
 }
 
 void loop() {
+
     // LED light sensor readings
     sensor_value = analogRead(PIN_LIGHT_SENSOR);
     //Serial.print("Sensor Value: ");
