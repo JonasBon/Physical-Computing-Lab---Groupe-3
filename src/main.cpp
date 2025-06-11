@@ -3,37 +3,66 @@
 #include <Audio.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-
-#include <AudioFileSourceSPIFFS.h>
-#include <AudioGeneratorMP3.h>
-#include <AudioOutputI2S.h>
-
 #include "secrets.h"
 
-// define LED light sensor
+// --- Light sensor setup ---
 #define PIN_LIGHT_SENSOR 32
 #define LIGHT_THRESHOLD 750
 int sensor_value = 0;
 
-// define I2S connections
+
+// --- Audio setup ---
 #define I2S_DOUT 22
 #define I2S_BCLK 26
 #define I2S_LRC  25
 
-// create audio object
 Audio audio;
+// ------
 
-AudioGeneratorMP3 *mp3;
-AudioOutputI2S *out;
+unsigned long startTimeTimeout = 0;
+const unsigned long timeout = 30000; // 30 seconds timeout
 
 bool isLightOn() {
     return sensor_value > LIGHT_THRESHOLD;
 }
 
+String urlEncode(const String& str) {
+    String encoded = "";
+    char c;
+    char code0;
+    char code1;
+    for (int i = 0; i < str.length(); i++) {
+        c = str.charAt(i);
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == ' ') {
+            encoded += c;
+        } else {
+            code1 = (c & 0xf) + '0';
+            if ((c & 0xf) > 9) code1 = (c & 0xf) - 10 + 'A';
+            code0 = ((c >> 4) & 0xf) + '0';
+            if (((c >> 4) & 0xf) > 9) code0 = ((c >> 4) & 0xf) - 10 + 'A';
+            encoded += '%';
+            encoded += code0;
+            encoded += code1;
+        }
+    }
+    return encoded;
+}
+
+void playTTS(const String& input) {
+    String result = urlEncode(input);
+    result.replace(" ", "+");
+    String finalUrl = String(TTS_URL) + "text=" + result;
+    audio.connecttohost(finalUrl.c_str());
+}
+
+
 String getAPIResponse(String inputText) {
+
+    Serial.println("encoded input: " + urlEncode(inputText));
 
     String apiUrl = "https://api.openai.com/v1/chat/completions";
     String payload = "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"user\", \"content\": \"" + inputText + "\"}]}";
+    String outputText = "Fehler bei der Kommunikation mit der API";
 
     HTTPClient http;
 
@@ -48,11 +77,12 @@ String getAPIResponse(String inputText) {
         // Parse JSON response
         DynamicJsonDocument jsonDoc(1024);
         deserializeJson(jsonDoc, response);
-        String outputText = jsonDoc["choices"][0]["message"]["content"].as<String>();
-        Serial.println(outputText);
+        outputText = jsonDoc["choices"][0]["message"]["content"].as<String>();
     } else {
         Serial.printf("Error %i \n", httpResponseCode);
     }
+    http.end();
+    return outputText;
 }
 
 
@@ -60,11 +90,7 @@ String getAPIResponse(String inputText) {
 void setup() {
     Serial.begin(115200);
 
-    // define LED light sensor pin
-    pinMode(PIN_LIGHT_SENSOR, OUTPUT);
-    digitalWrite(PIN_LIGHT_SENSOR, LOW);
-
-    // setup Wifi in station mode
+    // - WiFi setup -
     WiFi.disconnect();
     WiFi.mode(WIFI_STA);
 
@@ -83,29 +109,30 @@ void setup() {
     Serial.println(WiFi.localIP());
     Serial.println("");
 
+    // - Light sensor setup -
+    pinMode(PIN_LIGHT_SENSOR, OUTPUT);
+    digitalWrite(PIN_LIGHT_SENSOR, LOW);
 
-    // connect MAX98357 I2S amplifier module
+    // - Audio setup -
     audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-
-    // set volume (0-100)
     audio.setVolume(10);
-
-    //getAPIResponseWithSpeech();
-    audio.connecttohost("141.147.61.164:42069/tts?text=hallo+das+ist+ein+test+du+knecht");
-
-    //audio.connecttohost("0n-80s.radionetz.de:8000/0n-70s.mp3");
-    //audio.connecttohost("http://stream.ffn.de/radiobollerwagen/mp3-192/;stream.nsv?ref=radioplayer");
 }
 
 void loop() {
+    while(!audio.isRunning() || (millis() - startTimeTimeout > timeout)) {
+        if (millis() - startTimeTimeout > timeout) {
+            Serial.println("Debug print: Audio took too long to start playing. :c");
+        }
 
-    // LED light sensor readings
-    sensor_value = analogRead(PIN_LIGHT_SENSOR);
-    //Serial.print("Sensor Value: ");
-    //Serial.println(sensor_value);
+        String response = getAPIResponse("Erzähle einen kurzen random Witz. Bitte ohne Tabs oder Zeilenumbrüche, trenne alle Wörter ausschließlich mit Leerzeichen.");
+        Serial.println("Response from API: " + response);
+        playTTS(response);
+        startTimeTimeout = millis();
 
-    //getAPIResponse();
-
-    // run audio player
+        // LED light sensor readings
+        sensor_value = analogRead(PIN_LIGHT_SENSOR);
+        Serial.print("Sensor Value: ");
+        Serial.println(sensor_value);
+    }
     audio.loop();
 }
