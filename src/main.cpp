@@ -3,44 +3,48 @@
 #include <Audio.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <base64.h>
 #include "secrets.h"
+#include "pinconfig.h"
 
 // --- Light sensor setup ---
-#define PIN_LIGHT_SENSOR 32
-#define LIGHT_THRESHOLD 750
+#define LIGHT_THRESHOLD 3500
 int sensor_value = 0;
 
-
 // --- Audio setup ---
-#define I2S_DOUT 22
-#define I2S_BCLK 26
-#define I2S_LRC  25
-
 Audio audio;
-// ------
 
 // --- Camera setup ---
-#define CAMERA_RX_PIN 16 // green wire
-#define CAMERA_TX_PIN 17 // blue wire
-
-const uint8_t END_MARKER[] = { 0xFF, 0xD9, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF }; // Beispiel
+const uint8_t END_MARKER[] = { 0xFF, 0xD9, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF };
 const size_t END_MARKER_LEN = sizeof(END_MARKER);
-
 const int MAX_IMAGE_SIZE = 100 * 256;
 uint8_t imageBuffer[MAX_IMAGE_SIZE];
 size_t imageIndex = 0;
-
-#define BUTTON_PIN_TAKE_IMAGE 18
 
 unsigned long startTimeTimeout = 0;
 const unsigned long timeout = 30000; // 30 seconds timeout
 const unsigned long imageTimeout = 5000; // 5 seconds timeout for image capture
 
 
-bool isLightOn() {
-    return sensor_value > LIGHT_THRESHOLD;
+const bool DEBUG_MODE = true;
+
+void debugPrint(String message) {
+    if(DEBUG_MODE) {
+        Serial.print(message);
+    }
 }
 
+void debugPrintln(String message) {
+    if(DEBUG_MODE) {
+        Serial.println(message);
+    }
+}
+
+bool isLightOn() {
+    sensor_value = analogRead(PIN_LIGHT_SENSOR);
+    //debugPrintln("Current light sensor value: " + String(sensor_value));
+    return sensor_value < LIGHT_THRESHOLD;
+}
 
 String urlEncode(const String& str) {
     String encoded = "";
@@ -72,13 +76,35 @@ void playTTS(const String& input) {
 }
 
 
-String getAPIResponse(String inputText) {
+String getAPIResponse(String inputText, bool sendImage = false) {
 
-    Serial.println("encoded input: " + urlEncode(inputText));
-
-    String apiUrl = "https://api.openai.com/v1/chat/completions";
-    String payload = "{\"model\": \"gpt-3.5-turbo\", \"messages\": [{\"role\": \"user\", \"content\": \"" + inputText + "\"}]}";
     String outputText = "Fehler bei der Kommunikation mit der API";
+    String apiUrl = "https://api.openai.com/v1/chat/completions";
+    String payload = "";
+
+    if (sendImage) {
+        // Bild in Base64 konvertieren
+        String base64Image = base64::encode(imageBuffer, imageIndex - END_MARKER_LEN);
+        String imageDataUrl = "data:image/jpeg;base64," + base64Image;
+
+        // JSON-Payload mit Bild + Text
+        payload = "{"
+                  "\"model\": \"gpt-4o\","
+                  "\"messages\": ["
+                  "{"
+                  "\"role\": \"user\","
+                  "\"content\": ["
+                  "{ \"type\": \"text\", \"text\": \"" + inputText + "\" },"
+                  "{ \"type\": \"image_url\", \"image_url\": { \"url\": \"" + imageDataUrl + "\" } }""]""}""]""}";
+    } else {
+        // Nur Text-Prompt
+        payload = "{"
+                  "\"model\": \"gpt-4o\","
+                  "\"messages\": ["
+                  "{"
+                  "\"role\": \"user\","
+                  "\"content\": \"" + inputText + "\"""}""]""}";
+    }
 
     HTTPClient http;
 
@@ -101,46 +127,40 @@ String getAPIResponse(String inputText) {
     return outputText;
 }
 
-bool imageBufferEndsWithEndMarker(bool debug) {
+bool imageBufferEndsWithEndMarker() {
     if (imageIndex < END_MARKER_LEN) return false;
     for (size_t i = 0; i < END_MARKER_LEN; ++i) {
-        if(debug) {
-            Serial.print("Checking imageBuffer at index: ");
-            Serial.print(imageIndex - END_MARKER_LEN + i);
-            Serial.print(" (");
-            Serial.print(imageBuffer[imageIndex - END_MARKER_LEN + i], HEX);
-            Serial.print(") ");
-            Serial.print(" against end marker byte: ");
-            Serial.println(END_MARKER[i], HEX);
-        }
         if (imageBuffer[imageIndex - END_MARKER_LEN + i] != END_MARKER[i]) {
             return false;
         }
     }
-    Serial.println("--- Image buffer ends with end marker! ---");
     return true;
 }
 
-void takeImage() {
-    Serial2.println("capture"); // Send command to camera ESP to take a picture
-    // reset image buffer
+bool takeImage() {
+    Serial2.println("capture");
     memset(imageBuffer, 0, MAX_IMAGE_SIZE);
     imageIndex = 0;
     unsigned long start = millis();
-
     unsigned long timeDifference = 0;
-    while (imageIndex < MAX_IMAGE_SIZE && !imageBufferEndsWithEndMarker(false)) {
-    //while (imageIndex < MAX_IMAGE_SIZE) {
+    while (!imageBufferEndsWithEndMarker()) {
         timeDifference = millis() - start;
         if(timeDifference > imageTimeout) {
-            Serial.println("Timeout while waiting for image data");
-            break;
+            Serial.println("Image Capture Error: Timeout reached");
+            return false;
         }
+        if(imageIndex >= MAX_IMAGE_SIZE) {
+            Serial.println("Image Capture Error: Buffer overflow");
+            return false;
+        }
+
         if (Serial2.available() > 0) {
             imageBuffer[imageIndex++] = Serial2.read();
         }
     }
+    return true;
 }
+
 
 void setup() {
     Serial.begin(115200);
@@ -174,46 +194,98 @@ void setup() {
     audio.setVolume(10);
 
     // - Button setup -
-    pinMode(BUTTON_PIN_TAKE_IMAGE, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_INSERT, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_REMOVE, INPUT_PULLUP);
+
+    // - LED setup -
+    pinMode(RED_LED_PIN, OUTPUT);
+    pinMode(YELLOW_LED_PIN, OUTPUT);
 }
 
 void loop() {
+    if(isLightOn()) {
+        digitalWrite(RED_LED_PIN, HIGH);
 
-    if (digitalRead(BUTTON_PIN_TAKE_IMAGE) == LOW) {
-        takeImage();
+        // Check if any button was pressed
+        if(digitalRead(BUTTON_PIN_INSERT) == LOW || digitalRead(BUTTON_PIN_REMOVE) == LOW) {
+            bool insertAction = digitalRead(BUTTON_PIN_INSERT) == LOW;
+            bool removeAction = digitalRead(BUTTON_PIN_REMOVE) == LOW;
 
-        bool snens = imageBufferEndsWithEndMarker(false);
-        Serial.println("End marker found: " + String(snens));
-        Serial.println("Image data captured, current index: " + String(imageIndex));
+            //Check that only one button was pressed
+            if(insertAction != removeAction) {
+                digitalWrite(YELLOW_LED_PIN, HIGH);
+                if(takeImage()) {
+                    bool hasBarcode = false;
+                    String productName = "";
 
-        //print last END_MARKER_LEN bytes of imageBuffer
-        Serial.print("Last 8 bytes of imageBuffer: ");
-        for (size_t i = 0; i < END_MARKER_LEN; ++i) {
-            if (imageBuffer[imageIndex - END_MARKER_LEN + i] < 16) {
-                Serial.print("0");
+                    // TODO: Check image for Barcode
+                    // Das hier geht prinzipiell, aber wird ja denke ich nicht die Lösung am Ende. Barcodes einlesen konnte ChatGPT bei mir nicht.
+                    // productName = getAPIResponse("Gebe mir in einem Wort zurück, ob sich auf dem Bild ein Barcode befindet oder nicht.", true);
+                    // debugPrintln("Is there a Barcode? Recognized by ChatGPT: " + productName);
+
+                    if(hasBarcode) {
+                        // TODO: Handle Barcode
+
+                    } else {
+                        productName = getAPIResponse("Gebe in nur 1-2 Wörtern zurück, um was für ein Lebensmittel es sich auf dem Bild handelt.", true);
+                        debugPrintln("Product name recognized by ChatGPT: " + productName);
+                    }
+
+                    if(insertAction) {
+                        // TODO: Add product to inventory
+                    }
+                    if(removeAction) {
+                        // TODO: Remove product from inventory
+                    }
+                }
+                digitalWrite(YELLOW_LED_PIN, LOW);
             }
-            Serial.print(imageBuffer[imageIndex - END_MARKER_LEN + i], HEX);
-            Serial.print(" ");
         }
+        audio.loop();
+    } else {
+        digitalWrite(RED_LED_PIN, LOW);
+        delay(500);
+    }
 
-        if(false) {
-            Serial.println("raw image data:");
-            for (size_t i = 0; i < imageIndex; i++) {
+    if(false) {
+        // --- Testing stuff ---
 
-                // if imageBuffer[i] is smaller than 16, print it as a two-digit hex value
-                if (imageBuffer[i] < 16) {
+        if (digitalRead(BUTTON_PIN_INSERT) == LOW) {
+            Serial.println("Button pressed, starting image capture...");
+            bool snens = takeImage();
+            Serial.println("Image captured successfully: " + String(snens));
+            Serial.println("Image data captured, current index: " + String(imageIndex));
+
+            //print last END_MARKER_LEN bytes of imageBuffer
+            Serial.print("Last 8 bytes of imageBuffer: ");
+            for (size_t i = 0; i < END_MARKER_LEN; ++i) {
+                if (imageBuffer[imageIndex - END_MARKER_LEN + i] < 16) {
                     Serial.print("0");
                 }
-
-                Serial.print(imageBuffer[i], HEX);
+                Serial.print(imageBuffer[imageIndex - END_MARKER_LEN + i], HEX);
                 Serial.print(" ");
             }
+
+            if(false) {
+                Serial.println("raw image data:");
+                for (size_t i = 0; i < imageIndex; i++) {
+
+                    // if imageBuffer[i] is smaller than 16, print it as a two-digit hex value
+                    if (imageBuffer[i] < 16) {
+                        Serial.print("0");
+                    }
+
+                    Serial.print(imageBuffer[i], HEX);
+                    Serial.print(" ");
+                }
+            }
+
+            Serial.println("--- Image data capturing finished! ---");
+            String imageResponse = getAPIResponse("Gebe in nur 1-2 Wörtern zurück, um was für ein Lebensmittel es sich auf dem Bild handelt.", true);
+            Serial.println("Response from API: " + imageResponse);
+
         }
 
-        Serial.println("--- Image data capturing finished! ---");
-
-        delay(1000); // Debounce delay
-    }
 
 //    while(!audio.isRunning() || (millis() - startTimeTimeout > timeout)) {
 //        if (millis() - startTimeTimeout > timeout) {
@@ -225,10 +297,8 @@ void loop() {
 //        playTTS(response);
 //        startTimeTimeout = millis();
 //
-//        // LED light sensor readings
-//        sensor_value = analogRead(PIN_LIGHT_SENSOR);
-//        Serial.print("Sensor Value: ");
-//        Serial.println(sensor_value);
 //    }
 //    audio.loop();
+    }
+
 }
