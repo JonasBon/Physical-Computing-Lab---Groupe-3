@@ -26,7 +26,7 @@ Audio audio;
 const uint8_t END_MARKER[] = { 0xFF, 0xD9, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF }; // Beispiel
 const size_t END_MARKER_LEN = sizeof(END_MARKER);
 
-const int MAX_IMAGE_SIZE = 100 * 64;
+const int MAX_IMAGE_SIZE = 100 * 256;
 uint8_t imageBuffer[MAX_IMAGE_SIZE];
 size_t imageIndex = 0;
 
@@ -34,11 +34,13 @@ size_t imageIndex = 0;
 
 unsigned long startTimeTimeout = 0;
 const unsigned long timeout = 30000; // 30 seconds timeout
-const unsigned long imageTimeout = 2000; // 2 seconds timeout for image capture
+const unsigned long imageTimeout = 5000; // 5 seconds timeout for image capture
+
 
 bool isLightOn() {
     return sensor_value > LIGHT_THRESHOLD;
 }
+
 
 String urlEncode(const String& str) {
     String encoded = "";
@@ -128,6 +130,7 @@ void takeImage() {
 
     unsigned long timeDifference = 0;
     while (imageIndex < MAX_IMAGE_SIZE && !imageBufferEndsWithEndMarker(false)) {
+    //while (imageIndex < MAX_IMAGE_SIZE) {
         timeDifference = millis() - start;
         if(timeDifference > imageTimeout) {
             Serial.println("Timeout while waiting for image data");
@@ -139,10 +142,9 @@ void takeImage() {
     }
 }
 
-
 void setup() {
     Serial.begin(115200);
-    Serial2.begin(57600, SERIAL_8N1, CAMERA_RX_PIN, CAMERA_TX_PIN);
+    Serial2.begin(115200, SERIAL_8N1, CAMERA_RX_PIN, CAMERA_TX_PIN);
 
     // - WiFi setup -
     WiFi.disconnect();
@@ -179,18 +181,36 @@ void loop() {
 
     if (digitalRead(BUTTON_PIN_TAKE_IMAGE) == LOW) {
         takeImage();
-        //print image data to serial for debugging
-//        Serial.println("Image data captured:");
-//        for (int i = 0; i < MAX_IMAGE_SIZE; i++) {
-//            Serial.print(imageBuffer[i], HEX);
-//            Serial.print(" ");
-//        }
-//        Serial.println();
 
-        Serial.println("Check for end marker:");
-        bool snens = imageBufferEndsWithEndMarker(true);
+        bool snens = imageBufferEndsWithEndMarker(false);
         Serial.println("End marker found: " + String(snens));
+        Serial.println("Image data captured, current index: " + String(imageIndex));
 
+        //print last END_MARKER_LEN bytes of imageBuffer
+        Serial.print("Last 8 bytes of imageBuffer: ");
+        for (size_t i = 0; i < END_MARKER_LEN; ++i) {
+            if (imageBuffer[imageIndex - END_MARKER_LEN + i] < 16) {
+                Serial.print("0");
+            }
+            Serial.print(imageBuffer[imageIndex - END_MARKER_LEN + i], HEX);
+            Serial.print(" ");
+        }
+
+        if(false) {
+            Serial.println("raw image data:");
+            for (size_t i = 0; i < imageIndex; i++) {
+
+                // if imageBuffer[i] is smaller than 16, print it as a two-digit hex value
+                if (imageBuffer[i] < 16) {
+                    Serial.print("0");
+                }
+
+                Serial.print(imageBuffer[i], HEX);
+                Serial.print(" ");
+            }
+        }
+
+        Serial.println("--- Image data capturing finished! ---");
 
         delay(1000); // Debounce delay
     }
