@@ -8,6 +8,7 @@
 #include "secrets.h"
 #include "pinconfig.h"
 #include "prompts.h"
+#include "database.h"
 
 // --- Light sensor setup ---
 #define LIGHT_THRESHOLD 3500
@@ -219,6 +220,9 @@ void setup() {
     // - LED setup -
     pinMode(RED_LED_PIN, OUTPUT);
     pinMode(YELLOW_LED_PIN, OUTPUT);
+
+    // - Database setup -
+    initDatabase();
 }
 
 void loop() {
@@ -235,7 +239,7 @@ void loop() {
                 digitalWrite(YELLOW_LED_PIN, HIGH);
                 if(takeImage()) {
                     debugPrintln("Image captured successfully. Image size: " + String(imageIndex) + " bytes");
-                    printRawImageData();
+                    //printRawImageData();
                     bool hasBarcode = false;
                     String productName = "";
 
@@ -253,17 +257,18 @@ void loop() {
                     }
 
                     if(insertAction) {
-                        // TODO: Add product to inventory
+                        addItemToDatabase(productName.c_str());
                         String ttsResponse = getAPIResponse(PROMPT_ADD_PRODUCT + productName);
                         debugPrintln("TTS Response (add product): " + ttsResponse);
                         playTTSAudio(ttsResponse);
                     }
                     if(removeAction) {
-                        // TODO: Remove product from inventory
+                        removeItemFromDatabase(productName.c_str());
                         String ttsResponse = getAPIResponse(PROMPT_REMOVE_PRODUCT + productName);
                         debugPrintln("TTS Response (remove product): " + ttsResponse);
                         playTTSAudio(ttsResponse);
                     }
+                    printDatabase();
                 }
                 digitalWrite(YELLOW_LED_PIN, LOW);
             }

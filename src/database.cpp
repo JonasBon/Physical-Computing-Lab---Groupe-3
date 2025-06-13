@@ -9,6 +9,20 @@
 
 std::vector<Item> database;
 
+void initDatabase() {
+    if (!LittleFS.begin(true)) {
+        Serial.println("Failed to mount LittleFS");
+        return;
+    }
+
+    if (LittleFS.exists(DP_PATH)) {
+        loadDatabase();
+    } else {
+        Serial.println("Database file does not exist, creating a new one");
+        saveDatabase();
+    }
+}
+
 void saveDatabase() {
     File file = LittleFS.open(DP_PATH, "w");
     if (!file) {

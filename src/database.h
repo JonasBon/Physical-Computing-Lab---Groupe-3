@@ -6,6 +6,8 @@ struct Item {
     int amount;
 };
 
+void initDatabase();
+
 void saveDatabase();
 
 void loadDatabase();
@@ -16,4 +18,4 @@ void removeItemFromDatabase(const char* name);
 
 void printDatabase();
 
-#endif DATABASE_H
+#endif // DATABASE_H
