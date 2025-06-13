@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <base64.h>
+
 #include "secrets.h"
 #include "pinconfig.h"
 #include "prompts.h"
@@ -45,6 +46,17 @@ bool isLightOn() {
     sensor_value = analogRead(PIN_LIGHT_SENSOR);
     //debugPrintln("Current light sensor value: " + String(sensor_value));
     return sensor_value < LIGHT_THRESHOLD;
+}
+
+void printRawImageData() {
+    Serial.println("Raw image data:");
+    for (size_t i = 0; i < imageIndex; i++) {
+        if (imageBuffer[i] < 16) {
+            Serial.print("0");
+        }
+        Serial.print(String(imageBuffer[i], HEX) + " ");
+    }
+    Serial.println("");
 }
 
 String urlEncode(const String& str) {
@@ -173,7 +185,6 @@ bool takeImage() {
     return true;
 }
 
-
 void setup() {
     Serial.begin(115200);
     Serial2.begin(115200, SERIAL_8N1, CAMERA_RX_PIN, CAMERA_TX_PIN);
@@ -224,6 +235,7 @@ void loop() {
                 digitalWrite(YELLOW_LED_PIN, HIGH);
                 if(takeImage()) {
                     debugPrintln("Image captured successfully. Image size: " + String(imageIndex) + " bytes");
+                    printRawImageData();
                     bool hasBarcode = false;
                     String productName = "";
 
