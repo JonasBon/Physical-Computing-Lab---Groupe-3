@@ -9,3 +9,5 @@ A microelectronics project with an ESP32 about a refrigerator sensor that can de
 1. Host your own Text-to-Speech (TTS) server. You can use the provided stuff in the 'tts-server' folder, which sends and api call to the tts api from chatgpt and streams the received audio back to the ESP32.
 You need to copy the '.env.template' file to '.env' and fill in your API Key.
 2. Copy 'secrets.h.template' to 'secrets.h' and fill in your credentials and stuff.
+3. If needed, change some other header variables
+4. Upload the code to your ESP32
