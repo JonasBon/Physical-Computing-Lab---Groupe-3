@@ -79,6 +79,7 @@ async function processScan(imageBase64) {
   const filename = await saveBase64Image(imageBase64);
   try {
     const barcode = await readBarcodeFromImage(filename);
+    console.log('Barcode read from image:', barcode);
     if (!barcode) throw new Error('No barcode found in image');
 
     const product = await fetchProductFromBarcode(barcode);
