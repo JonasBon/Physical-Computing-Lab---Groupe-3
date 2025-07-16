@@ -25,6 +25,9 @@ uint8_t imageBuffer[MAX_IMAGE_SIZE];
 size_t imageIndex = 0;
 
 unsigned long startTimeTimeout = 0;
+unsigned long lastTimeFridgeClosed = 0;
+bool errorOccurred = false;
+const unsigned int maxFridgeOpenTime = 100; // in seconds
 const unsigned long audioTimeout = 30000; // 30 seconds timeout for audio playback
 const unsigned long imageTimeout = 5000; // 5 seconds timeout for image capture
 
@@ -109,7 +112,7 @@ void playTTSAudio(const String& input) {
 
 
 String getAPIResponse(String inputText, bool sendImage = false) {
-    String outputText = "Fehler bei der Kommunikation mit der API";
+    String outputText = "";
     String apiUrl = "https://api.openai.com/v1/chat/completions";
     String payload;
 
@@ -216,6 +219,7 @@ void setup() {
     // - Button setup -
     pinMode(BUTTON_PIN_INSERT, INPUT_PULLUP);
     pinMode(BUTTON_PIN_REMOVE, INPUT_PULLUP);
+    pinMode(BUTTON_PIN_READ_DATABASE, INPUT_PULLUP);
 
     // - LED setup -
     pinMode(RED_LED_PIN, OUTPUT);
@@ -223,13 +227,25 @@ void setup() {
 
     // - Database setup -
     initDatabase();
+
+    lastTimeFridgeClosed = millis();
+
+
+    // radio test
+//    audio = new Audio();
+//    audio->setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+//    audio->setVolume(10);
+//    audio->connecttohost("0n-80s.radionetz.de:8000/0n-70s.mp3");
+//    while (1) {
+//        audio->loop();
+//    }
 }
 
 void loop() {
     if(isLightOn()) {
         digitalWrite(RED_LED_PIN, HIGH);
 
-        // Check if any button was pressed
+        // Check if any button was pressed for inserting or removing items
         if(digitalRead(BUTTON_PIN_INSERT) == LOW || digitalRead(BUTTON_PIN_REMOVE) == LOW) {
             bool insertAction = digitalRead(BUTTON_PIN_INSERT) == LOW;
             bool removeAction = digitalRead(BUTTON_PIN_REMOVE) == LOW;
@@ -256,26 +272,60 @@ void loop() {
                         debugPrintln("Product name recognized by ChatGPT: " + productName);
                     }
 
-                    if(insertAction) {
-                        addItemToDatabase(productName.c_str());
-                        String ttsResponse = getAPIResponse(PROMPT_ADD_PRODUCT + productName);
-                        debugPrintln("TTS Response (add product): " + ttsResponse);
-                        playTTSAudio(ttsResponse);
+                    if(productName.length() > 0) {
+                        if(insertAction) {
+                            addItemToDatabase(productName.c_str());
+                            String ttsResponse = getAPIResponse(PROMPT_ADD_PRODUCT + productName);
+                            debugPrintln("TTS Response (add product): " + ttsResponse);
+                            playTTSAudio(ttsResponse);
+                        }
+                        if(removeAction) {
+                            removeItemFromDatabase(productName.c_str());
+                            String ttsResponse = getAPIResponse(PROMPT_REMOVE_PRODUCT + productName);
+                            debugPrintln("TTS Response (remove product): " + ttsResponse);
+                            playTTSAudio(ttsResponse);
+                        }
+                        //printDatabase();
+                    } else {
+                        errorOccurred = true;
+                        playTTSAudio("Es konnte kein Produktname erkannt werden. Bitte versuche es erneut.");
                     }
-                    if(removeAction) {
-                        removeItemFromDatabase(productName.c_str());
-                        String ttsResponse = getAPIResponse(PROMPT_REMOVE_PRODUCT + productName);
-                        debugPrintln("TTS Response (remove product): " + ttsResponse);
-                        playTTSAudio(ttsResponse);
-                    }
-                    printDatabase();
                 }
                 digitalWrite(YELLOW_LED_PIN, LOW);
             }
         }
+
+        // Check if Button is pressed to read the database
+        else if(digitalRead(BUTTON_PIN_READ_DATABASE) == LOW) {
+            digitalWrite(YELLOW_LED_PIN, HIGH);
+            //printDatabase();
+            String apiCall = "Es folgt die ausgelesene Datenbank von Lebensmitteln, die sich im Kühlschrank befinden. Bitte gebe uns einmal eine schöne Response zurück, die wir dann als TTS abspielen können, um vorzulesen, was sich alles im Kühlschrank befindet: ";
+            apiCall += getDatabaseAsString().c_str();
+            String ttsResponse = getAPIResponse(apiCall);
+            debugPrintln("TTS Response (read database): " + ttsResponse);
+            playTTSAudio(ttsResponse);
+            digitalWrite(YELLOW_LED_PIN, LOW);
+        }
+
+        // Check if fridge is open for too long (5 minutes)
+        else if (millis() - lastTimeFridgeClosed > maxFridgeOpenTime * 1000) {
+            debugPrintln("Fridge has been open for too long, playing warning sound.");
+            playTTSAudio(PROMPT_FRIDGE_OPEN_FOR_TOO_LONG);
+        }
+
+        if(errorOccurred) {
+            //blink three times with red LED
+            for (int i = 0; i < 3; i++) {
+                digitalWrite(RED_LED_PIN, LOW);
+                delay(300);
+                digitalWrite(RED_LED_PIN, HIGH);
+                delay(300);
+            }
+            errorOccurred = false;
+        }
     } else {
         digitalWrite(RED_LED_PIN, LOW);
+        lastTimeFridgeClosed = millis();
         delay(500);
     }
-
 }

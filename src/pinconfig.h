@@ -16,6 +16,7 @@
 // --- Button setup ---
 #define BUTTON_PIN_INSERT 5
 #define BUTTON_PIN_REMOVE 18
+#define BUTTON_PIN_READ_DATABASE 4
 
 // --- LED setup ---
 #define RED_LED_PIN 19

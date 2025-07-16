@@ -108,3 +108,15 @@ void printDatabase() {
         Serial.printf("Item: %s, Amount: %d\n", item.name, item.amount);
     }
 }
+
+std::string getDatabaseAsString() {
+    std::string result;
+    for (const auto& item : database) {
+        result += std::string(item.name) + " (" + std::to_string(item.amount) + "), ";
+    }
+    if (!result.empty()) {
+        result.pop_back();
+        result.pop_back();
+    }
+    return result;
+}
