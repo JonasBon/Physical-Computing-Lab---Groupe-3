@@ -87,9 +87,9 @@ async function processScan(imageBase64) {
 
     return { barcode, product };
   } finally {
-    fs.unlink(filename, err => {
-      if (err) console.error('Failed to delete temp file:', err.message);
-    });
+    // fs.unlink(filename, err => {
+    //   if (err) console.error('Failed to delete temp file:', err.message);
+    // });
   }
 }
 
