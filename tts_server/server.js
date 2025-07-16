@@ -95,6 +95,8 @@ async function processScan(imageBase64) {
 app.post('/scan', async (req, res) => {
   console.log('Received barcode scan request');
   console.log("Request body:", req.body);
+  console.log("Request image:", req.body.image);
+
   try {
     const result = await processScan(req.body.image);
     res.json(result);
