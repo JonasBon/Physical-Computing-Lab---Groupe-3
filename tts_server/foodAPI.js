@@ -23,7 +23,7 @@ function extractProductData(data) {
 // Fetch product information from Open Food Facts using a barcode
 async function fetchProductFromBarcode(barcode) {
   try {
-    const url = `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`;
+    const url = `https://de.openfoodfacts.org/api/v0/product/${barcode}.json`;
     const response = await axios.get(url);
 
     if (response.data.status === 0) {
