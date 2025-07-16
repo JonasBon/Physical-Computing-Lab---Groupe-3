@@ -115,13 +115,18 @@ String getBarcodeApiResponse() {
     String apiUrl = String(SERVER_URL) + "/scan";
     String payload;
 
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(MAX_IMAGE_SIZE + 512);
     doc["image"] = "data:image/jpeg;base64," + base64::encode(imageBuffer, imageIndex - END_MARKER_LEN);
+
     serializeJson(doc, payload);
+
+    //print json payload for debugging
+    debugPrintln("Payload for barcode API: " + payload);
 
     HTTPClient http;
     http.begin(apiUrl);
     http.addHeader("Content-Type", "application/json");
+    http.addHeader("Content-Length", String(payload.length()));
     //http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
     int httpResponseCode = http.POST(payload);
 
@@ -177,7 +182,7 @@ String getChatgptAPIResponse(String inputText, bool sendImage = false) {
     HTTPClient http;
     http.begin(apiUrl);
     http.addHeader("Content-Type", "application/json");
-    http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
+    //http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
     int httpResponseCode = http.POST(payload);
 
     if (httpResponseCode == 200) {
