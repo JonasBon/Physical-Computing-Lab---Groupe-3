@@ -88,7 +88,7 @@ String urlEncode(const String& str) {
 void playTTSAudio(const String& input) {
     String result = urlEncode(input);
     result.replace(" ", "+");
-    String finalUrl = String(TTS_URL) + "text=" + result;
+    String finalUrl = String(SERVER_URL) + "/tts?text=" + result;
 
     audio = new Audio();
     audio->setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
@@ -110,8 +110,45 @@ void playTTSAudio(const String& input) {
     delete audio;
 }
 
+String getBarcodeApiResponse() {
+    String outputText = "";
+    String apiUrl = String(SERVER_URL) + "/scan";
+    String payload;
 
-String getAPIResponse(String inputText, bool sendImage = false) {
+    DynamicJsonDocument doc(512);
+    doc["image"] = "data:image/jpeg;base64," + base64::encode(imageBuffer, imageIndex - END_MARKER_LEN);
+    serializeJson(doc, payload);
+
+    HTTPClient http;
+    http.begin(apiUrl);
+    http.addHeader("Content-Type", "application/json");
+    //http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
+    int httpResponseCode = http.POST(payload);
+
+    if (httpResponseCode == 200) {
+        String response = http.getString();
+        DynamicJsonDocument jsonDoc(1024);
+        deserializeJson(jsonDoc, response);
+
+        //check if product.name is there
+        if (jsonDoc.containsKey("product") && jsonDoc["product"].containsKey("name")) {
+            outputText = jsonDoc["product"]["name"].as<String>();
+        } else {
+            // If no product name, return barcode
+            debugPrintln("Barcode could not be regocnized,");
+            if (jsonDoc.containsKey("error")) {
+                debugPrintln("Error was found as well: " + jsonDoc["error"].as<String>());
+            }
+        }
+    } else {
+        Serial.printf("(http response of barcode scanner was not 200) Error %i \n", httpResponseCode);
+    }
+    http.end();
+    return outputText;
+}
+
+
+String getChatgptAPIResponse(String inputText, bool sendImage = false) {
     String outputText = "";
     String apiUrl = "https://api.openai.com/v1/chat/completions";
     String payload;
@@ -255,33 +292,24 @@ void loop() {
                 digitalWrite(YELLOW_LED_PIN, HIGH);
                 if(takeImage()) {
                     debugPrintln("Image captured successfully. Image size: " + String(imageIndex) + " bytes");
-                    //printRawImageData();
-                    bool hasBarcode = false;
-                    String productName = "";
+                    String productName = getBarcodeApiResponse();
 
-                    // TODO: Check image for Barcode
-                    // Das hier geht prinzipiell, aber wird ja denke ich nicht die Lösung am Ende. Barcodes richtig einlesen konnte ChatGPT bei mir nicht.
-                    // productName = getAPIResponse("Gebe mir in einem Wort zurück, ob sich auf dem Bild ein Barcode befindet oder nicht.", true);
-                    // debugPrintln("Is there a Barcode? Recognized by ChatGPT: " + productName);
-
-                    if(hasBarcode) {
-                        // TODO: Handle Barcode
-
-                    } else {
-                        productName = getAPIResponse(PROMPT_IMAGE_RECOGNITION, true);
+                    if(productName.length() == 0) {
+                        debugPrintln("No product name found from barcode API, using ChatGPT for image recognition.");
+                        productName = getChatgptAPIResponse(PROMPT_IMAGE_RECOGNITION, true);
                         debugPrintln("Product name recognized by ChatGPT: " + productName);
                     }
 
                     if(productName.length() > 0) {
                         if(insertAction) {
                             addItemToDatabase(productName.c_str());
-                            String ttsResponse = getAPIResponse(PROMPT_ADD_PRODUCT + productName);
+                            String ttsResponse = getChatgptAPIResponse(PROMPT_ADD_PRODUCT + productName);
                             debugPrintln("TTS Response (add product): " + ttsResponse);
                             playTTSAudio(ttsResponse);
                         }
                         if(removeAction) {
                             removeItemFromDatabase(productName.c_str());
-                            String ttsResponse = getAPIResponse(PROMPT_REMOVE_PRODUCT + productName);
+                            String ttsResponse = getChatgptAPIResponse(PROMPT_REMOVE_PRODUCT + productName);
                             debugPrintln("TTS Response (remove product): " + ttsResponse);
                             playTTSAudio(ttsResponse);
                         }
@@ -301,7 +329,7 @@ void loop() {
             //printDatabase();
             String apiCall = "Es folgt die ausgelesene Datenbank von Lebensmitteln, die sich im Kühlschrank befinden. Bitte gebe uns einmal eine schöne Response zurück, die wir dann als TTS abspielen können, um vorzulesen, was sich alles im Kühlschrank befindet: ";
             apiCall += getDatabaseAsString().c_str();
-            String ttsResponse = getAPIResponse(apiCall);
+            String ttsResponse = getChatgptAPIResponse(apiCall);
             debugPrintln("TTS Response (read database): " + ttsResponse);
             playTTSAudio(ttsResponse);
             digitalWrite(YELLOW_LED_PIN, LOW);
