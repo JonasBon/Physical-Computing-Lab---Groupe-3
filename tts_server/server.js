@@ -22,7 +22,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/tts', async (req, res) => {
-  console.log('Neue Request!');
+  console.log('Received TTS request');
   console.log(req.query);
   const text = req.query.text;
   const voice = req.query.voice || 'nova';
@@ -93,6 +93,7 @@ async function processScan(imageBase64) {
 }
 
 app.post('/scan', async (req, res) => {
+  console.log('Received barcode scan request');
   try {
     const result = await processScan(req.body.image);
     res.json(result);
