@@ -11,7 +11,7 @@
 #include "database.h"
 
 // --- Light sensor setup ---
-#define LIGHT_THRESHOLD 3500
+#define LIGHT_THRESHOLD 4000
 int sensor_value = 0;
 
 // --- Audio setup ---
@@ -92,7 +92,7 @@ void playTTSAudio(const String& input) {
 
     audio = new Audio();
     audio->setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-    audio->setVolume(50);
+    audio->setVolume(100);
     audio->connecttohost(finalUrl.c_str());
     startTimeTimeout = millis();
     while (1) {
@@ -277,6 +277,9 @@ void setup() {
 
     // - Database setup -
     initDatabase();
+
+    // clear database once if needed
+    //clearDatabase();
 
     lastTimeFridgeClosed = millis();
 
