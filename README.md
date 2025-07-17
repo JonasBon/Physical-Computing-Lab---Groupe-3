@@ -25,3 +25,6 @@ A Post on /scan with a JSON body containing the image data will return a JSON wi
 
 ### Circuit Diagram:
 ![Schaltplan](Schaltplan.png)
+
+### URL to the ESP32-S3-CAM Code:
+https://github.com/heeeeeenerika/pcl-camera-module
