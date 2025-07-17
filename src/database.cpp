@@ -102,6 +102,15 @@ void removeItemFromDatabase(const char* name) {
     }
 }
 
+void clearDatabase() {
+    for (auto& item : database) {
+        free(item.name);
+    }
+    database.clear();
+    LittleFS.remove(DP_PATH);
+    Serial.println("Database cleared");
+}
+
 void printDatabase() {
     Serial.println("Database contents:");
     for (const auto& item : database) {
@@ -113,6 +122,18 @@ std::string getDatabaseAsString() {
     std::string result;
     for (const auto& item : database) {
         result += std::string(item.name) + " (" + std::to_string(item.amount) + "), ";
+    }
+    if (!result.empty()) {
+        result.pop_back();
+        result.pop_back();
+    }
+    return result;
+}
+
+std::string getDatabaseAsStringWithoutAmount() {
+    std::string result;
+    for (const auto& item : database) {
+        result += std::string(item.name) + ", ";
     }
     if (!result.empty()) {
         result.pop_back();

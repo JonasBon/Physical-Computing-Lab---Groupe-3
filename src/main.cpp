@@ -27,7 +27,7 @@ size_t imageIndex = 0;
 unsigned long startTimeTimeout = 0;
 unsigned long lastTimeFridgeClosed = 0;
 bool errorOccurred = false;
-const unsigned int maxFridgeOpenTime = 100; // in seconds
+const unsigned int maxFridgeOpenTime = 10; // in seconds
 const unsigned long audioTimeout = 30000; // 30 seconds timeout for audio playback
 const unsigned long imageTimeout = 5000; // 5 seconds timeout for image capture
 
@@ -92,7 +92,7 @@ void playTTSAudio(const String& input) {
 
     audio = new Audio();
     audio->setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-    audio->setVolume(10);
+    audio->setVolume(50);
     audio->connecttohost(finalUrl.c_str());
     startTimeTimeout = millis();
     while (1) {
@@ -111,17 +111,19 @@ void playTTSAudio(const String& input) {
 }
 
 String getBarcodeApiResponse() {
+    // If PSRAM is big enough, remove next line
+    return "";
+
     String outputText = "";
     String apiUrl = String(SERVER_URL) + "/scan";
-    String payload;
+    String payload = R"({"image":"data:image/jpeg;base64,)";
+    payload += String(base64::encode(imageBuffer, imageIndex - END_MARKER_LEN));
+    payload += R"("})";
 
-    DynamicJsonDocument doc(MAX_IMAGE_SIZE + 512);
-    doc["image"] = "data:image/jpeg;base64," + base64::encode(imageBuffer, imageIndex - END_MARKER_LEN);
+    debugPrint("Payload for barcode api: ");
+    debugPrintln(payload);
 
-    serializeJson(doc, payload);
-
-    //print json payload for debugging
-    debugPrintln("Payload for barcode API: " + payload);
+    //printRawImageData();
 
     HTTPClient http;
     http.begin(apiUrl);
@@ -140,13 +142,14 @@ String getBarcodeApiResponse() {
             outputText = jsonDoc["product"]["name"].as<String>();
         } else {
             // If no product name, return barcode
-            debugPrintln("Barcode could not be regocnized,");
+            debugPrintln("Barcode could not be recognized");
             if (jsonDoc.containsKey("error")) {
                 debugPrintln("Error was found as well: " + jsonDoc["error"].as<String>());
             }
         }
     } else {
         Serial.printf("(http response of barcode scanner was not 200) Error %i \n", httpResponseCode);
+        debugPrintln("Response: " + http.getString());
     }
     http.end();
     return outputText;
@@ -182,7 +185,7 @@ String getChatgptAPIResponse(String inputText, bool sendImage = false) {
     HTTPClient http;
     http.begin(apiUrl);
     http.addHeader("Content-Type", "application/json");
-    //http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
+    http.addHeader("Authorization", "Bearer " + String(CHATGPT_API_KEY));
     int httpResponseCode = http.POST(payload);
 
     if (httpResponseCode == 200) {
@@ -191,6 +194,7 @@ String getChatgptAPIResponse(String inputText, bool sendImage = false) {
         deserializeJson(jsonDoc, response);
         outputText = jsonDoc["choices"][0]["message"]["content"].as<String>();
     } else {
+        debugPrintln("ChatGPT API request failed");
         Serial.printf("Error %i \n", httpResponseCode);
     }
     http.end();
@@ -229,6 +233,10 @@ bool takeImage() {
         }
     }
     return true;
+}
+
+bool stringContains(const String& str, const String& substring) {
+    return str.indexOf(substring) != -1;
 }
 
 void setup() {
@@ -300,21 +308,36 @@ void loop() {
                     String productName = getBarcodeApiResponse();
 
                     if(productName.length() == 0) {
-                        debugPrintln("No product name found from barcode API, using ChatGPT for image recognition.");
-                        productName = getChatgptAPIResponse(PROMPT_IMAGE_RECOGNITION, true);
-                        debugPrintln("Product name recognized by ChatGPT: " + productName);
+                        //debugPrintln("No product name found from barcode API, using ChatGPT for image recognition.");
+                        String prompt1 = PROMPT_IMAGE_RECOGNITION;
+                        String prompt2 = getDatabaseAsStringWithoutAmount().c_str();
+                        String prompt = prompt1 + prompt2;
+                        debugPrintln("Prompt for ChatGPT image recognition: " + prompt);
+                        productName = getChatgptAPIResponse(prompt, true);
+                        if(stringContains(productName, "unbekannt") || stringContains(productName, "Unbekannt") || stringContains(productName, "unknown") || stringContains(productName, "Unknown")) {
+                            productName == "";
+                            errorOccurred = true;
+                        } else {
+                            debugPrintln("Product name recognized by ChatGPT: " + productName);
+                        }
                     }
 
                     if(productName.length() > 0) {
                         if(insertAction) {
                             addItemToDatabase(productName.c_str());
-                            String ttsResponse = getChatgptAPIResponse(PROMPT_ADD_PRODUCT + productName);
+                            String prompt1 = PROMPT_SYSTEM;
+                            String prompt2 = PROMPT_ADD_PRODUCT;
+                            String prompt = prompt1 + prompt2 + productName;
+                            String ttsResponse = getChatgptAPIResponse(prompt);
                             debugPrintln("TTS Response (add product): " + ttsResponse);
                             playTTSAudio(ttsResponse);
                         }
                         if(removeAction) {
                             removeItemFromDatabase(productName.c_str());
-                            String ttsResponse = getChatgptAPIResponse(PROMPT_REMOVE_PRODUCT + productName);
+                            String prompt1 = PROMPT_SYSTEM;
+                            String prompt2 = PROMPT_REMOVE_PRODUCT;
+                            String prompt = prompt1 + prompt2 + productName;
+                            String ttsResponse = getChatgptAPIResponse(prompt);
                             debugPrintln("TTS Response (remove product): " + ttsResponse);
                             playTTSAudio(ttsResponse);
                         }
@@ -332,9 +355,11 @@ void loop() {
         else if(digitalRead(BUTTON_PIN_READ_DATABASE) == LOW) {
             digitalWrite(YELLOW_LED_PIN, HIGH);
             //printDatabase();
-            String apiCall = "Es folgt die ausgelesene Datenbank von Lebensmitteln, die sich im Kühlschrank befinden. Bitte gebe uns einmal eine schöne Response zurück, die wir dann als TTS abspielen können, um vorzulesen, was sich alles im Kühlschrank befindet: ";
-            apiCall += getDatabaseAsString().c_str();
-            String ttsResponse = getChatgptAPIResponse(apiCall);
+            String prompt1 = PROMPT_SYSTEM;
+            String prompt2 = "Es folgt die ausgelesene Datenbank von Lebensmitteln, die sich im Kühlschrank befinden. Bitte gebe uns einmal eine schöne Response zurück, die wir dann als TTS abspielen können, um vorzulesen, was sich alles im Kühlschrank befindet. Ignoriere hierfür die vorherige Zeitbeschränkung der Antwort von 10 Sekunden. Darf schon länger dauern.: ";
+            prompt2 += getDatabaseAsString().c_str();
+            String prompt = prompt1 + prompt2;
+            String ttsResponse = getChatgptAPIResponse(prompt);
             debugPrintln("TTS Response (read database): " + ttsResponse);
             playTTSAudio(ttsResponse);
             digitalWrite(YELLOW_LED_PIN, LOW);
@@ -343,7 +368,12 @@ void loop() {
         // Check if fridge is open for too long (5 minutes)
         else if (millis() - lastTimeFridgeClosed > maxFridgeOpenTime * 1000) {
             debugPrintln("Fridge has been open for too long, playing warning sound.");
-            playTTSAudio(PROMPT_FRIDGE_OPEN_FOR_TOO_LONG);
+            String prompt1 = PROMPT_SYSTEM;
+            String prompt2 = PROMPT_FRIDGE_OPEN_FOR_TOO_LONG;
+            String prompt = prompt1 + prompt2;
+            String response = getChatgptAPIResponse(prompt);
+            debugPrintln("Fridge open warning response: " + response);
+            playTTSAudio(response);
         }
 
         if(errorOccurred) {

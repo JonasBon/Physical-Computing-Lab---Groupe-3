@@ -18,8 +18,12 @@ void addItemToDatabase(const char* name);
 
 void removeItemFromDatabase(const char* name);
 
+void clearDatabase();
+
 void printDatabase();
 
 std::string getDatabaseAsString();
+
+std::string getDatabaseAsStringWithoutAmount();
 
 #endif // DATABASE_H
