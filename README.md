@@ -28,3 +28,6 @@ A Post on /scan with a JSON body containing the image data will return a JSON wi
 
 ### URL to the ESP32-S3-CAM Code:
 https://github.com/heeeeeenerika/pcl-camera-module
+
+### URL to the Final Product Video:
+https://www.youtube.com/watch?v=XeKjvDH3iMk
