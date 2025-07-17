@@ -95,9 +95,6 @@ async function processScan(imageBase64) {
 
 app.post('/scan', async (req, res) => {
   console.log('Received barcode scan request');
-  console.log("Request body:", req.body);
-  console.log("Request image:", req.body.image);
-
   try {
     const result = await processScan(req.body.image);
     res.json(result);
@@ -107,5 +104,5 @@ app.post('/scan', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`TTS proxy listening on port ${PORT}`);
+  console.log(`Fridge server listening on port ${PORT}`);
 });

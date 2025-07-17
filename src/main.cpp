@@ -27,7 +27,7 @@ size_t imageIndex = 0;
 unsigned long startTimeTimeout = 0;
 unsigned long lastTimeFridgeClosed = 0;
 bool errorOccurred = false;
-const unsigned int maxFridgeOpenTime = 10; // in seconds
+const unsigned int maxFridgeOpenTime = 100; // in seconds
 const unsigned long audioTimeout = 30000; // 30 seconds timeout for audio playback
 const unsigned long imageTimeout = 5000; // 5 seconds timeout for image capture
 
@@ -111,7 +111,7 @@ void playTTSAudio(const String& input) {
 }
 
 String getBarcodeApiResponse() {
-    // If PSRAM is big enough, remove next line
+    // If PSRAM is big enough, remove next line. Currently we imitate that no barcode was found on the image.
     return "";
 
     String outputText = "";
@@ -235,8 +235,8 @@ bool takeImage() {
     return true;
 }
 
-bool stringContains(const String& str, const String& substring) {
-    return str.indexOf(substring) != -1;
+bool stringContains(const std::string& str, const std::string& substring) {
+    return str.find(substring) != std::string::npos;
 }
 
 void setup() {
@@ -314,8 +314,9 @@ void loop() {
                         String prompt = prompt1 + prompt2;
                         debugPrintln("Prompt for ChatGPT image recognition: " + prompt);
                         productName = getChatgptAPIResponse(prompt, true);
-                        if(stringContains(productName, "unbekannt") || stringContains(productName, "Unbekannt") || stringContains(productName, "unknown") || stringContains(productName, "Unknown")) {
-                            productName == "";
+                        if(stringContains(productName.c_str(), "unbekannt") || stringContains(productName.c_str(), "Unbekannt") || stringContains(productName.c_str(), "unknown") || stringContains(productName.c_str(), "Unknown")) {
+                            debugPrintln("Unbekannt product name detected, setting productName to empty string.");
+                            productName = "";
                             errorOccurred = true;
                         } else {
                             debugPrintln("Product name recognized by ChatGPT: " + productName);
@@ -341,7 +342,6 @@ void loop() {
                             debugPrintln("TTS Response (remove product): " + ttsResponse);
                             playTTSAudio(ttsResponse);
                         }
-                        //printDatabase();
                     } else {
                         errorOccurred = true;
                         playTTSAudio("Es konnte kein Produktname erkannt werden. Bitte versuche es erneut.");
@@ -354,7 +354,7 @@ void loop() {
         // Check if Button is pressed to read the database
         else if(digitalRead(BUTTON_PIN_READ_DATABASE) == LOW) {
             digitalWrite(YELLOW_LED_PIN, HIGH);
-            //printDatabase();
+            printDatabase();
             String prompt1 = PROMPT_SYSTEM;
             String prompt2 = "Es folgt die ausgelesene Datenbank von Lebensmitteln, die sich im Kühlschrank befinden. Bitte gebe uns einmal eine schöne Response zurück, die wir dann als TTS abspielen können, um vorzulesen, was sich alles im Kühlschrank befindet. Ignoriere hierfür die vorherige Zeitbeschränkung der Antwort von 10 Sekunden. Darf schon länger dauern.: ";
             prompt2 += getDatabaseAsString().c_str();
@@ -365,7 +365,7 @@ void loop() {
             digitalWrite(YELLOW_LED_PIN, LOW);
         }
 
-        // Check if fridge is open for too long (5 minutes)
+        // Check if fridge is open for too long (100 seconds)
         else if (millis() - lastTimeFridgeClosed > maxFridgeOpenTime * 1000) {
             debugPrintln("Fridge has been open for too long, playing warning sound.");
             String prompt1 = PROMPT_SYSTEM;
@@ -376,8 +376,8 @@ void loop() {
             playTTSAudio(response);
         }
 
+        // Blink three times with red LED if an error occurred (e.g. product not recognized)
         if(errorOccurred) {
-            //blink three times with red LED
             for (int i = 0; i < 3; i++) {
                 digitalWrite(RED_LED_PIN, LOW);
                 delay(300);
